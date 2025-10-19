@@ -1,43 +1,90 @@
+const fs = require("fs-extra");
+const path = require("path");
+
 module.exports.config = {
   name: "leave",
   eventType: ["log:unsubscribe"],
-  version: "1.0.0",
-  credits: "𝐂𝐘𝐁𝐄𝐑 ☢️_𖣘 -𝐁𝐎𝐓 ⚠️ 𝑻𝑬𝑨𝑴_ ☢️",
-  description: "Thông báo bot hoặc người rời khỏi nhóm",
-  dependencies: {
-    "fs-extra": "",
-    "path": ""
+  version: "3.8.0",
+  credits: "𝐒𝐀𝐈𝐌⍟𝐕𝐀𝐈 | Modified by Akash",
+  description: "Leave & Kick message system with gif/video/image support"
+};
+
+module.exports.onLoad = function () {
+  const folders = [
+    path.join(__dirname, "cache", "leaveGif"),
+    path.join(__dirname, "cache", "KickGif") // ✅ বড় হাতের K
+  ];
+  for (const folder of folders) {
+    if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
   }
 };
 
-module.exports.run = async function({ api, event, Users, Threads }) {
-  if (event.logMessageData.leftParticipantFbId == api.getCurrentUserID()) return;
+module.exports.run = async function ({ api, event, Users, Threads }) {
+  try {
+    const { threadID } = event;
+    const leftID = event.logMessageData?.leftParticipantFbId || event.logMessageData?.participant_id;
+    if (!leftID) return;
+    if (leftID == api.getCurrentUserID()) return; // বট নিজে গেলে কিছু না পাঠাবে
 
-  const { createReadStream, existsSync, mkdirSync } = global.nodemodule["fs-extra"];
-  const { join } = global.nodemodule["path"];
-  const { threadID } = event;
+    const threadData = global.data.threadData.get(parseInt(threadID)) || (await Threads.getData(threadID)).data;
+    const userName = global.data.userName.get(leftID) || await Users.getNameUser(leftID);
 
-  const data = global.data.threadData.get(parseInt(threadID)) || (await Threads.getData(threadID)).data;
-  const name = global.data.userName.get(event.logMessageData.leftParticipantFbId) || await Users.getNameUser(event.logMessageData.leftParticipantFbId);
+    // 🔎 কিক না লিভ সেটা ডিটেক্ট করা
+    const isKick = event.author && event.author !== leftID;
+    const isLeave = !isKick;
 
-  const type = (event.author == event.logMessageData.leftParticipantFbId)
-    ? " তোর সাহস কম না  গ্রুপের এডমিনের পারমিশন ছাড়া তুই লিভ  নিস😡😠🤬 \n✦─────꯭─⃝‌‌𝐒𝐡𝐚𝐡𝐚𝐝𝐚𝐭 𝐂𝐡𝐚𝐭 𝐁𝐨𝐭────✦"
-    : "তোমার এই গ্রুপে থাকার কোনো যোগ্যাতা নেই ছাগল😡\nতাই তোমাকে লাথি মেরে গ্রুপ থেকে বের করে দেওয়া হলো🤪 WELLCOME REMOVE🤧\n✦─────꯭─⃝‌‌𝐒𝐡𝐚𝐡𝐚𝐝𝐚𝐭 𝐂𝐡𝐚𝐭 𝐁𝐨𝐭────✦";
+    console.log("========== LEAVE/KICK EVENT ==========");
+    console.log("👤 User:", userName);
+    console.log("📤 LeftID:", leftID);
+    console.log("🦵 Author:", event.author);
+    console.log(isKick ? "👉 Detected: KICK event" : "👉 Detected: LEAVE event");
+    console.log("======================================");
 
-  const path = join(__dirname, "Shahadat", "leaveGif");
-  const gifPath = join(path, `leave1.gif`);
+    const typeText = isLeave
+      ? "তুই নিজেই গ্রুপ থেকে লিভ নিলি 😤 আবার আইসিস না! 🚫"
+      : "তোমাকে গ্রুপ থেকে লাথি মেরে বের করে দেওয়া হলো 🤣🚪";
 
-  if (!existsSync(path)) mkdirSync(path, { recursive: true });
+    let msg = (typeof threadData.customLeave == "undefined")
+      ? `━━━━━━━━━━━━━━━━━━━━━
+😢 {name} {type}
+━━━━━━━━━━━━━━━━━━━━━
+ভালো থাকিস... কিন্তু গ্রুপের মজা মিস করবি 😉
+✦─────꯭─⃝‌‌—͟͟͞͞𝗛𝗔𝗠𝗜𝗠 𝗖𝗛𝗔𝗧 𝗕𝗢𝗧—͟͟͞͞────✦`
+      : threadData.customLeave;
 
-  let msg = (typeof data.customLeave == "undefined")
-    ? "ইস {name} {type} "
-    : data.customLeave;
+    msg = msg.replace(/\{name}/g, userName).replace(/\{type}/g, typeText);
 
-  msg = msg.replace(/\{name}/g, name).replace(/\{type}/g, type);
+    // ✅ বড় হাতের K অনুযায়ী পথ ঠিক করা
+    const folderPath = isKick
+      ? path.join(__dirname, "cache", "KickGif")
+      : path.join(__dirname, "cache", "leaveGif");
 
-  const formPush = existsSync(gifPath)
-    ? { body: msg, attachment: createReadStream(gifPath) }
-    : { body: msg };
+    const fileList = fs.readdirSync(folderPath).filter(file =>
+      [".mp4", ".gif", ".jpg", ".png", ".jpeg", ".mp3"].some(ext => file.toLowerCase().endsWith(ext))
+    );
 
-  return api.sendMessage(formPush, threadID);
+    const selectedFile = fileList.length > 0
+      ? path.join(folderPath, fileList[Math.floor(Math.random() * fileList.length)])
+      : null;
+
+    console.log("📁 Folder path:", folderPath);
+    console.log("🎥 Selected file:", selectedFile ? path.basename(selectedFile) : "❌ No file found");
+
+    let attachment = null;
+    if (selectedFile && fs.existsSync(selectedFile)) {
+      attachment = fs.createReadStream(selectedFile);
+    }
+
+    api.sendMessage(
+      attachment ? { body: msg, attachment } : { body: msg },
+      threadID,
+      (err) => {
+        if (err) console.error("❌ Message Send Error:", err);
+        else console.log("✅ Message sent successfully!\n");
+      }
+    );
+
+  } catch (err) {
+    console.error("❌ Leave Event Error:", err);
+  }
 };
